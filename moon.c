@@ -14,17 +14,12 @@
 
 #include <linux/fs.h>
 #include <linux/blkdev.h>
-
 #include <linux/genhd.h>
 #include <linux/hdreg.h>
 
 /* -----------------------------------------------------------------------------
- * Kernel Module Description
+ * Define
  * -------------------------------------------------------------------------- */
-MODULE_AUTHOR("Tuntunkun");
-MODULE_DESCRIPTION("Moon File System");
-MODULE_LICENSE("GPL");
-
 #define KERNEL_SECTOR_SIZE 512
 #define LOGICAL_SECTOR_SIZE 512
 #define LOGICAL_SECTOR_NUMBER 2048
@@ -90,7 +85,7 @@ static struct block_device_operations moon_device_ops = {
 static void moon_device_transfer(struct moon_device *dev, sector_t sector,
 				unsigned long nsect, char *buffer, int write) {
 	unsigned long offset = sector * LOGICAL_SECTOR_SIZE;
-	unsigned long nbytes = LOGICAL_SECTOR_NUMBER * LOGICAL_SECTOR_SIZE;
+	unsigned long nbytes = nsect * LOGICAL_SECTOR_SIZE;
 
 	if ((offset + nbytes) > dev->size) {
 		printk (KERN_NOTICE "sbd: Beyond-end write (%ld %ld)\n", offset, nbytes);
@@ -105,8 +100,8 @@ static void moon_device_transfer(struct moon_device *dev, sector_t sector,
 static void moon_device_request(struct request_queue *q)
 {
 	struct request *req;
-	req = blk_fetch_request(q);
 
+	req = blk_fetch_request(q);
 	while (req != NULL) {
 		// blk_fs_request() was removed in 2.6.36 - many thanks to
 		// Christian Paro for the heads up and fix...
@@ -134,13 +129,12 @@ static int __init kernel_module_init_function(void)
 {
 	/*
 	 * =ブロックデバイスのバッファ取得=
+	 * ブロックデバイスが使用するバッファ用のメモリを取得
 	 */
 	Device.size = (LOGICAL_SECTOR_SIZE * LOGICAL_SECTOR_NUMBER);
 	spin_lock_init(&Device.lock);
 	Device.data = vmalloc(Device.size);
 	if (Device.data == NULL) return -ENOMEM;
-
-	printk(KERN_INFO "block device vmalloc ok!!\n");
 
 	/*
 	 * =I/Oスケジューラ=
@@ -158,8 +152,6 @@ static int __init kernel_module_init_function(void)
 		vfree(Device.data);
 		return -ENOMEM;
 	}
-
-	printk(KERN_INFO "Create Queue OK\n");
 
 	/*
 	 * =ブロック型デバイスのドライバをカーネルに登録=
@@ -183,12 +175,13 @@ static int __init kernel_module_init_function(void)
 		return -ENOMEM;
 	}
 
-	printk(KERN_INFO "Register Block Device OK\n");
-
 	/*
          * 仮想ディスクの作成
+         * alloc_disk関数を使用して仮想的なディスクを作成します
+         * -引数1: マイナー番号数(捜査を行う機器の数)
+         *  (例)HDDの場合には、作成可能なパーティションの数
          */
-	Device.gd = alloc_disk(16);
+	Device.gd = alloc_disk(1);
 	if (Device.gd == NULL) {
 		unregister_blkdev(Moon.major_number, STORAGE_DEVICE_NAME);
 		vfree(Device.data);
@@ -196,11 +189,22 @@ static int __init kernel_module_init_function(void)
 	}
 	Device.gd->major = Moon.major_number;
 	Device.gd->first_minor = 0;
+
+	// ディスクをオープンしたときなどに呼び出される関数の登録
 	Device.gd->fops = &moon_device_ops;
 	Device.gd->private_data = &Device;
-	//strcpy(Device.gd->disk_name, STORAGE_DEVICE_NAME);
+
+	// スペシャルファイル名(例)[/dev/sda]
+	strcpy(Device.gd->disk_name, STORAGE_DEVICE_NAME);
 	set_capacity(Device.gd, LOGICAL_SECTOR_NUMBER);
+
+	// ブロックデバイスにキューを結びつける
 	Device.gd->queue = Moon.queue;
+
+	/*
+	 * =仮想ディスクを登録=
+	 * スペシャルファイルは自動的に/devに作られる
+	 */
 	add_disk(Device.gd);
 
 	return 0;
@@ -215,11 +219,14 @@ static void __exit kernel_module_exit_function(void)
 	put_disk(Device.gd);
 
 	/*
-	 * =ブロック型デバイスドライバの登録解除=
+	 * キューの削除
+	 */
+	blk_cleanup_queue(Moon.queue);
+
+	/*
+	 * ブロック型デバイスドライバの登録解除
 	 */
 	unregister_blkdev(Moon.major_number, STORAGE_DEVICE_NAME);
-
-	blk_cleanup_queue(Moon.queue);
 
 	/*
 	 * free device data
@@ -235,4 +242,10 @@ static void __exit kernel_module_exit_function(void)
 module_init(kernel_module_init_function);
 module_exit(kernel_module_exit_function);
 
+/* -----------------------------------------------------------------------------
+ * Kernel Module Description
+ * -------------------------------------------------------------------------- */
+MODULE_AUTHOR("Tuntunkun");
+MODULE_DESCRIPTION("Moon File System");
+MODULE_LICENSE("GPL");
 
