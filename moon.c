@@ -2,47 +2,114 @@
 //_/			Moon Distributed File System
 //_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
-/*
+/* -----------------------------------------------------------------------------
  * Kernel Module & Object Storage Driver Headers
- */
-#include <linux/module.h>
+ * -------------------------------------------------------------------------- */
+#include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
+
+#include <linux/vmalloc.h>
+#include <linux/errno.h>
+
 #include <linux/fs.h>
+#include <linux/blkdev.h>
 
-#define DEVICE_NAME "moon0"
-
+/* -----------------------------------------------------------------------------
+ * Kernel Module Description
+ * -------------------------------------------------------------------------- */
 MODULE_AUTHOR("Tuntunkun");
-MODULE_DESCRIPTION("Speed File System");
+MODULE_DESCRIPTION("Moon File System");
 MODULE_LICENSE("GPL");
 
-/*
- * The internal representation of our device.
- */
-static struct sbd_device {
+#define LOGICAL_BLOCK_SIZE 512
+#define LOGICAL_SECTOR_SIZE 512
+#define STORAGE_DEVICE_NAME "moon0"
+
+/* -----------------------------------------------------------------------------
+ * Manage Moon Device Parameter
+ * -------------------------------------------------------------------------- */
+static struct moon_param {
+	int major_number;
+	struct request_queue *queue;
+} Moon;
+
+static struct moon_device {
 	unsigned long size;
 	spinlock_t lock;
 	u8 *data;
 	struct gendisk *gd;
 } Device;
 
-/*
- * Kernel Registration Operation
- */
-int dev_major	= 0;
-char *dev_name	= DEVICE_NAME;
-
-int init_module(void)
+/* -----------------------------------------------------------------------------
+ * Kernel module initialize function
+ * -------------------------------------------------------------------------- */
+static int __init kernel_module_init_function(void)
 {
-	printk(KERN_ALERT "REGISTER OPERATION\n");
-	dev_major = register_blkdev(0, dev_name);
+	int major_num = 0;
+
+	/*
+	 * Set up our internal device.
+	 */
+	Device.size = LOGICAL_SECTOR_SIZE * LOGICAL_BLOCK_SIZE;
+	spin_lock_init(&Device.lock);
+	Device.data = vmalloc(Device.size);
+	if (Device.data == NULL) return -ENOMEM;
+
+	/*
+	 * Get a request queue.
+	 */
+	//Moon.queue = blk_init_queue(sbd_request, &Device.lock);
+
+	/*
+	 * Register Block Device
+	 */
+	major_num = register_blkdev(major_num, STORAGE_DEVICE_NAME);
+	Moon.major_number = major_num;
+	if (major_num < 0) {
+		vfree(Device.data);
+		return -ENOMEM;
+	}
+
+	/*
+         * And the gendisk structure.
+         */
+	/*
+	Device.gd = alloc_disk(16);
+	if (Device.gd == NULL) {
+		unregister_blkdev(Moon.major_number, STORAGE_DEVICE_NAME);
+		vfree(Device.data);
+		return -ENOMEM;
+	}
+	*/
+
 
 	return 0;
 }
 
-void cleanup_module(void)
+/* ----------------------------------------------------------------------------
+ * Kernel module settlement function
+ * ------------------------------------------------------------------------- */
+static void __exit kernel_module_exit_function(void)
 {
-	printk(KERN_ALERT "UNREGISTER OPERATION\n");
-	unregister_blkdev(dev_major, dev_name);
-};
+
+	/*
+	 * Unregister Block Device
+	 */
+	unregister_blkdev(Moon.major_number, STORAGE_DEVICE_NAME);
+
+	/*
+	 * free device data
+	 */
+	vfree(Device.data);
+
+	return;
+}
+
+/* ----------------------------------------------------------------------------
+ * Register init & exit function
+ * ------------------------------------------------------------------------- */
+module_init(kernel_module_init_function);
+module_exit(kernel_module_exit_function);
 
 
