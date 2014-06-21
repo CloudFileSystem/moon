@@ -2,7 +2,6 @@
 #_/			Makefile for Monn File System Driver
 #_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/
 
-CFILES = moon.c sample.c
 obj-m += moon.o
 
 MODKO := moon.ko
